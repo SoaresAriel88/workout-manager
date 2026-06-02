@@ -3,7 +3,6 @@ import "dotenv/config";
 import fastifyCors from "@fastify/cors";
 import fastifySwagger from "@fastify/swagger";
 import fastifyApiReference from "@scalar/fastify-api-reference";
-import { fromNodeHeaders } from "better-auth/node";
 import Fastify from "fastify";
 import {
   jsonSchemaTransform,
@@ -14,6 +13,11 @@ import {
 import z from "zod";
 
 import { auth } from "./lib/auth.js";
+import { aiRoutes } from "./routes/ai.js";
+import { homeRoutes } from "./routes/home.js";
+import { meRoutes } from "./routes/me.js";
+import { statsRoutes } from "./routes/stats.js";
+import { workoutPlanRoutes } from "./routes/workout-plan.js";
 
 const app = Fastify({
   logger: true,
@@ -26,25 +30,23 @@ await app.register(fastifySwagger, {
   openapi: {
     info: {
       title: "Bootcamp Treinos API",
-      description: "API para bootcamp",
+      description: "API para o bootcamp de treinos do FSC",
       version: "1.0.0",
     },
     servers: [
       {
         description: "Localhost",
-        url: "https://localhost:3000",
+        url: "http://localhost:3000",
       },
     ],
   },
   transform: jsonSchemaTransform,
 });
 
-
-
 await app.register(fastifyCors, {
-  origin: ["https://localhost:8081"],
+  origin: true,
   credentials: true,
-})
+});
 
 await app.register(fastifyApiReference, {
   routePrefix: "/docs",
@@ -64,6 +66,14 @@ await app.register(fastifyApiReference, {
   },
 });
 
+// RESTful
+// Routes
+await app.register(homeRoutes, { prefix: "/home" });
+await app.register(meRoutes, { prefix: "/me" });
+await app.register(statsRoutes, { prefix: "/stats" });
+await app.register(workoutPlanRoutes, { prefix: "/workout-plans" });
+await app.register(aiRoutes, { prefix: "/ai" });
+
 app.withTypeProvider<ZodTypeProvider>().route({
   method: "GET",
   url: "/swagger.json",
@@ -79,7 +89,7 @@ app.withTypeProvider<ZodTypeProvider>().route({
   method: "GET",
   url: "/",
   schema: {
-    description: "Hello World route",
+    description: "Hello world",
     tags: ["Hello World"],
     response: {
       200: z.object({
@@ -89,11 +99,10 @@ app.withTypeProvider<ZodTypeProvider>().route({
   },
   handler: () => {
     return {
-      message: "Hello World ",
+      message: "Hello World",
     };
   },
 });
-
 
 app.route({
   method: ["GET", "POST"],
@@ -102,9 +111,12 @@ app.route({
     try {
       // Construct request URL
       const url = new URL(request.url, `http://${request.headers.host}`);
-      
+
       // Convert Fastify headers to standard Headers object
-      const headers = fromNodeHeaders(request.headers);
+      const headers = new Headers();
+      Object.entries(request.headers).forEach(([key, value]) => {
+        if (value) headers.append(key, value.toString());
+      });
       // Create Fetch API-compatible request
       const req = new Request(url.toString(), {
         method: request.method,
@@ -116,19 +128,19 @@ app.route({
       // Forward response to client
       reply.status(response.status);
       response.headers.forEach((value, key) => reply.header(key, value));
-      return reply.send(response.body ? await response.text() : null);
+      reply.send(response.body ? await response.text() : null);
     } catch (error) {
-      app.log.error(error)
-      return reply.status(500).send({ 
+      app.log.error(error);
+      reply.status(500).send({
         error: "Internal authentication error",
-        code: "AUTH_FAILURE"
+        code: "AUTH_FAILURE",
       });
     }
-  }
+  },
 });
 
 try {
-  await app.listen({ port: Number(process.env.PORT) });
+  await app.listen({ port: Number(process.env.PORT) || 8080 });
 } catch (err) {
   app.log.error(err);
   process.exit(1);
